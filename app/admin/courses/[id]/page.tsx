@@ -26,7 +26,7 @@ export default async function EditCoursePage({ params }: { params: Promise<{ id:
     const supabase = await createClient()
     const [c, l] = await Promise.all([
       supabase.from('db_courses').select('id, title, description, category, level, emoji, is_published').eq('id', id).single(),
-      supabase.from('db_lessons').select('id, title, content, duration_minutes, order_index').eq('course_id', id).order('order_index'),
+      supabase.from('db_lessons').select('id, title, content, duration_minutes, order_index, video_url').eq('course_id', id).order('order_index'),
     ])
     course = c.data
     lessons = l.data ?? []

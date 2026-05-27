@@ -173,6 +173,7 @@ export async function createLesson(formData: FormData) {
   const content = formData.get('content') as string
   const duration_minutes = parseInt(formData.get('duration_minutes') as string) || 10
   const order_index = parseInt(formData.get('order_index') as string) || 0
+  const video_url = (formData.get('video_url') as string) || null
 
   if (isDemoMode) {
     revalidatePath(`/admin/courses/${course_id}`)
@@ -182,7 +183,7 @@ export async function createLesson(formData: FormData) {
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('db_lessons')
-    .insert({ course_id, title, content, duration_minutes, order_index })
+    .insert({ course_id, title, content, duration_minutes, order_index, video_url })
     .select('id')
     .single()
   if (error) return { error: error.message }
@@ -204,7 +205,8 @@ export async function updateLesson(formData: FormData) {
   const content = formData.get('content') as string
   const duration_minutes = parseInt(formData.get('duration_minutes') as string) || 10
   const order_index = parseInt(formData.get('order_index') as string) || 0
-  const { error } = await supabase.from('db_lessons').update({ title, content, duration_minutes, order_index }).eq('id', id)
+  const video_url = (formData.get('video_url') as string) || null
+  const { error } = await supabase.from('db_lessons').update({ title, content, duration_minutes, order_index, video_url }).eq('id', id)
   if (error) return { error: error.message }
   revalidatePath(`/admin/courses/${course_id}`)
   return { success: true }
@@ -220,5 +222,95 @@ export async function deleteLesson(id: string, course_id: string) {
   const { error } = await supabase.from('db_lessons').delete().eq('id', id)
   if (error) return { error: error.message }
   revalidatePath(`/admin/courses/${course_id}`)
+  return { success: true }
+}
+
+// ─── QUIZ ACTIONS ──────────────────────────────────────────
+
+export async function createQuestion(payload: {
+  lesson_id: string; course_id: string; question: string
+  options: string[]; correct_index: number; order_index: number
+}) {
+  if (isDemoMode) return { success: true, id: 'demo-q-' + Date.now() }
+  const supabase = await createClient()
+  const { data, error } = await supabase.from('db_questions')
+    .insert({ ...payload, options: JSON.stringify(payload.options) })
+    .select('id').single()
+  if (error) return { error: error.message }
+  return { success: true, id: data.id }
+}
+
+export async function updateQuestion(payload: {
+  id: string; question: string; options: string[]; correct_index: number
+}) {
+  if (isDemoMode) return { success: true }
+  const supabase = await createClient()
+  const { error } = await supabase.from('db_questions')
+    .update({ question: payload.question, options: JSON.stringify(payload.options), correct_index: payload.correct_index })
+    .eq('id', payload.id)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function deleteQuestion(id: string) {
+  if (isDemoMode) return { success: true }
+  const supabase = await createClient()
+  const { error } = await supabase.from('db_questions').delete().eq('id', id)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function submitQuizAnswer(questionId: string, selectedIndex: number) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Chưa đăng nhập' }
+
+  const { data: q } = await supabase.from('db_questions').select('correct_index').eq('id', questionId).single()
+  if (!q) return { error: 'Câu hỏi không tồn tại' }
+
+  const is_correct = selectedIndex === q.correct_index
+  const { error } = await supabase.from('db_question_responses').upsert({
+    user_id: user.id, question_id: questionId, selected_index: selectedIndex, is_correct,
+  }, { onConflict: 'user_id,question_id' })
+  if (error) return { error: error.message }
+  return { success: true, is_correct, correct_index: q.correct_index }
+}
+
+// ─── SURVEY ACTIONS ────────────────────────────────────────
+
+export async function createSurveyQuestion(payload: {
+  lesson_id: string; course_id: string; question: string; order_index: number
+}) {
+  if (isDemoMode) return { success: true, id: 'demo-s-' + Date.now() }
+  const supabase = await createClient()
+  const { data, error } = await supabase.from('db_surveys').insert(payload).select('id').single()
+  if (error) return { error: error.message }
+  return { success: true, id: data.id }
+}
+
+export async function updateSurveyQuestion(payload: { id: string; question: string }) {
+  if (isDemoMode) return { success: true }
+  const supabase = await createClient()
+  const { error } = await supabase.from('db_surveys').update({ question: payload.question }).eq('id', payload.id)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function deleteSurveyQuestion(id: string) {
+  if (isDemoMode) return { success: true }
+  const supabase = await createClient()
+  const { error } = await supabase.from('db_surveys').delete().eq('id', id)
+  if (error) return { error: error.message }
+  return { success: true }
+}
+
+export async function submitSurveyResponse(surveyId: string, response: string) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return { error: 'Chưa đăng nhập' }
+  const { error } = await supabase.from('db_survey_responses').upsert({
+    user_id: user.id, survey_id: surveyId, response,
+  }, { onConflict: 'user_id,survey_id' })
+  if (error) return { error: error.message }
   return { success: true }
 }

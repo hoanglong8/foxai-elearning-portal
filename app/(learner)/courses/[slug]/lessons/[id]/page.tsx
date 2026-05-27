@@ -5,6 +5,9 @@ import Link from 'next/link'
 import { LessonSidebar } from '@/components/courses/LessonSidebar'
 import { MarkCompleteButton } from '@/components/courses/MarkCompleteButton'
 import { MarkdownContent } from '@/components/courses/MarkdownContent'
+import { YouTubeEmbed } from '@/components/courses/YouTubeEmbed'
+import { QuizBlock } from '@/components/courses/QuizBlock'
+import { SurveyBlock } from '@/components/courses/SurveyBlock'
 import { ChevronLeft, ChevronRight, Clock } from 'lucide-react'
 
 const isDemoMode = !process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -72,7 +75,7 @@ export default async function LessonPage({
 
     const { data: dbLesson } = await supabase
       .from('db_lessons')
-      .select('id, title, content, duration_minutes, order_index')
+      .select('id, title, content, duration_minutes, order_index, video_url')
       .eq('id', id)
       .eq('course_id', dbCourse.id)
       .single()
@@ -83,29 +86,37 @@ export default async function LessonPage({
       .eq('user_id', user.id).eq('course_id', dbCourse.id).maybeSingle()
     if (!enrollment) redirect(`/courses/${slug}`)
 
-    const { data: allDbLessons } = await supabase
-      .from('db_lessons')
-      .select('id, title, duration_minutes, order_index')
-      .eq('course_id', dbCourse.id)
-      .order('order_index')
+    const [allDbLessonsRes, prRes, qRes, qaRes, sqRes, srRes] = await Promise.all([
+      supabase.from('db_lessons').select('id, title, duration_minutes, order_index').eq('course_id', dbCourse.id).order('order_index'),
+      supabase.from('user_progress').select('lesson_id, completed').eq('user_id', user.id).eq('course_id', dbCourse.id),
+      supabase.from('db_questions').select('id, question, options, correct_index, order_index').eq('lesson_id', id).order('order_index'),
+      supabase.from('db_question_responses').select('question_id, selected_index, is_correct').eq('user_id', user.id),
+      supabase.from('db_surveys').select('id, question, order_index').eq('lesson_id', id).order('order_index'),
+      supabase.from('db_survey_responses').select('survey_id, response').eq('user_id', user.id),
+    ])
 
-    const { data: pr } = await supabase
-      .from('user_progress').select('lesson_id, completed')
-      .eq('user_id', user.id).eq('course_id', dbCourse.id)
-
-    const lessons = allDbLessons ?? []
-    const completedIds = new Set((pr ?? []).filter((p) => p.completed).map((p) => p.lesson_id))
+    const lessons = allDbLessonsRes.data ?? []
+    const completedIds = new Set((prRes.data ?? []).filter((p) => p.completed).map((p) => p.lesson_id))
     const isCompleted = completedIds.has(dbLesson.id)
     const currentIdx = lessons.findIndex((l) => l.id === id)
     const prevLesson = currentIdx > 0 ? lessons[currentIdx - 1] : undefined
     const nextLesson = currentIdx < lessons.length - 1 ? lessons[currentIdx + 1] : undefined
+
+    const questions = (qRes.data ?? []).map((q) => ({
+      ...q,
+      options: Array.isArray(q.options) ? q.options as string[] : JSON.parse(q.options as string) as string[],
+    }))
+    const userAnswers = (qaRes.data ?? []).map((a) => ({ question_id: a.question_id, selected_index: a.selected_index, is_correct: a.is_correct }))
+    const surveys = sqRes.data ?? []
+    const surveyIds = new Set(surveys.map((s) => s.id))
+    const userSurveyResponses = (srRes.data ?? []).filter((r) => surveyIds.has(r.survey_id))
 
     return (
       <LessonView
         courseTitle={dbCourse.title}
         courseEmoji={dbCourse.emoji ?? '📚'}
         slug={slug}
-        lesson={{ id: dbLesson.id, title: dbLesson.title, duration_minutes: dbLesson.duration_minutes, content: dbLesson.content }}
+        lesson={{ id: dbLesson.id, title: dbLesson.title, duration_minutes: dbLesson.duration_minutes, content: dbLesson.content, video_url: dbLesson.video_url }}
         courseId={dbCourse.id}
         allLessons={lessons}
         completedIds={completedIds}
@@ -114,6 +125,10 @@ export default async function LessonPage({
         totalCount={lessons.length}
         prevLessonId={prevLesson?.id}
         nextLessonId={nextLesson?.id}
+        questions={questions}
+        userAnswers={userAnswers}
+        surveys={surveys}
+        userSurveyResponses={userSurveyResponses}
       />
     )
   }
@@ -157,11 +172,15 @@ function LessonView({
   totalCount,
   prevLessonId,
   nextLessonId,
+  questions,
+  userAnswers,
+  surveys,
+  userSurveyResponses,
 }: {
   courseTitle: string
   courseEmoji: string
   slug: string
-  lesson: { id: string; title: string; duration_minutes: number; content: string }
+  lesson: { id: string; title: string; duration_minutes: number; content: string; video_url?: string | null }
   courseId: string
   allLessons: { id: string; title: string; duration_minutes: number }[]
   completedIds: Set<string>
@@ -170,6 +189,10 @@ function LessonView({
   totalCount: number
   prevLessonId?: string
   nextLessonId?: string
+  questions?: { id: string; question: string; options: string[]; correct_index: number }[]
+  userAnswers?: { question_id: string; selected_index: number; is_correct: boolean }[]
+  surveys?: { id: string; question: string }[]
+  userSurveyResponses?: { survey_id: string; response: string }[]
 }) {
   const sidebarCourse = { title: courseTitle, emoji: courseEmoji, slug, lessons: allLessons }
 
@@ -203,11 +226,21 @@ function LessonView({
             <h1 className="text-2xl font-bold text-gray-900">{lesson.title}</h1>
           </div>
 
+          {lesson.video_url && <YouTubeEmbed url={lesson.video_url} />}
+
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-6">
             <MarkdownContent content={lesson.content} />
           </div>
 
-          <div className="flex items-center justify-between gap-4">
+          {questions && questions.length > 0 && (
+            <QuizBlock questions={questions} initialAnswers={userAnswers ?? []} />
+          )}
+
+          {surveys && surveys.length > 0 && (
+            <SurveyBlock questions={surveys} initialResponses={userSurveyResponses ?? []} />
+          )}
+
+          <div className="flex items-center justify-between gap-4 mt-8">
             <div>
               {prevLessonId ? (
                 <Link
