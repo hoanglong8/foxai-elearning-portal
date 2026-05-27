@@ -1,0 +1,147 @@
+import { createClient } from '@/lib/supabase/server'
+import { getCourseBySlug } from '@/lib/courses-data'
+import { CATEGORY_LABELS, CATEGORY_COLORS, LEVEL_LABELS } from '@/types'
+import { redirect, notFound } from 'next/navigation'
+import Link from 'next/link'
+import { Badge } from '@/components/ui/badge'
+import { Progress } from '@/components/ui/progress'
+import { EnrollButton } from '@/components/courses/EnrollButton'
+import { BookOpen, Clock, CheckCircle2, Circle, ChevronLeft } from 'lucide-react'
+
+export default async function CourseOverviewPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>
+}) {
+  const { slug } = await params
+  const course = getCourseBySlug(slug)
+  if (!course) notFound()
+
+  const isDemoMode = !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL.includes('placeholder')
+
+  let enrollment: { id: string } | null = null
+  let progressRows: { lesson_id: string; completed: boolean }[] = []
+
+  if (isDemoMode) {
+    enrollment = { id: 'demo' }
+  } else {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) redirect('/login')
+
+    const { data: e } = await supabase
+      .from('enrollments').select('id')
+      .eq('user_id', user.id).eq('course_id', course.id).maybeSingle()
+    const { data: pr } = await supabase
+      .from('user_progress').select('lesson_id, completed')
+      .eq('user_id', user.id).eq('course_id', course.id)
+
+    enrollment = e
+    progressRows = pr ?? []
+  }
+
+  const completedIds = new Set((progressRows ?? []).filter((p) => p.completed).map((p) => p.lesson_id))
+  const completedCount = completedIds.size
+  const totalCount = course.lessons.length
+  const pct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
+  const totalMins = course.lessons.reduce((s, l) => s + l.duration_minutes, 0)
+
+  const isEnrolled = !!enrollment
+  const firstLesson = course.lessons[0]
+  const nextLesson = course.lessons.find((l) => !completedIds.has(l.id)) ?? firstLesson
+
+  return (
+    <div className="p-8 max-w-3xl mx-auto">
+      <Link href="/courses" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-6">
+        <ChevronLeft className="w-4 h-4" /> Quay lại khóa học
+      </Link>
+
+      {/* Course header */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 mb-6">
+        <div className="flex items-start gap-5">
+          <span className="text-5xl">{course.emoji}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex gap-2 mb-2 flex-wrap">
+              <Badge className={CATEGORY_COLORS[course.category]} variant="secondary">
+                {CATEGORY_LABELS[course.category]}
+              </Badge>
+              <Badge variant="outline">{LEVEL_LABELS[course.level]}</Badge>
+            </div>
+            <h1 className="text-xl font-bold text-gray-900 mb-2">{course.title}</h1>
+            <p className="text-gray-500 text-sm">{course.description}</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-6 mt-6 pt-6 border-t border-gray-50 text-sm text-gray-500">
+          <span className="flex items-center gap-1.5">
+            <BookOpen className="w-4 h-4" /> {totalCount} bài học
+          </span>
+          <span className="flex items-center gap-1.5">
+            <Clock className="w-4 h-4" /> {totalMins} phút
+          </span>
+        </div>
+
+        {isEnrolled && (
+          <div className="mt-4">
+            <div className="flex justify-between text-sm mb-1.5">
+              <span className="text-gray-600 font-medium">Tiến độ của bạn</span>
+              <span className="text-blue-600 font-semibold">{pct}%</span>
+            </div>
+            <Progress value={pct} className="h-2" />
+            <p className="text-xs text-gray-400 mt-1">{completedCount}/{totalCount} bài hoàn thành</p>
+          </div>
+        )}
+
+        <div className="mt-5">
+          {isEnrolled ? (
+            <Link
+              href={`/courses/${course.slug}/lessons/${nextLesson.id}`}
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-medium px-6 py-3 rounded-xl transition-colors"
+            >
+              {completedCount > 0 ? 'Tiếp tục học' : 'Bắt đầu học'}
+              <ChevronLeft className="w-4 h-4 rotate-180" />
+            </Link>
+          ) : (
+            <EnrollButton courseId={course.id} courseSlug={course.slug} firstLessonId={firstLesson?.id} />
+          )}
+        </div>
+      </div>
+
+      {/* Syllabus */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+        <h2 className="font-semibold text-gray-900 mb-4">Nội dung khóa học</h2>
+        <div className="space-y-2">
+          {course.lessons.map((lesson, idx) => {
+            const done = completedIds.has(lesson.id)
+            return (
+              <div key={lesson.id} className="flex items-center gap-3 py-2.5 px-3 rounded-lg hover:bg-gray-50 group">
+                {done ? (
+                  <CheckCircle2 className="w-5 h-5 text-green-500 shrink-0" />
+                ) : (
+                  <Circle className="w-5 h-5 text-gray-300 shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm font-medium text-gray-700">
+                    {idx + 1}. {lesson.title}
+                  </span>
+                </div>
+                <span className="text-xs text-gray-400 shrink-0 flex items-center gap-1">
+                  <Clock className="w-3 h-3" /> {lesson.duration_minutes} phút
+                </span>
+                {isEnrolled && (
+                  <Link
+                    href={`/courses/${course.slug}/lessons/${lesson.id}`}
+                    className="text-xs text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                  >
+                    Xem
+                  </Link>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
