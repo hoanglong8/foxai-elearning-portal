@@ -1,10 +1,16 @@
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
-import type { StaticCourse } from '@/types'
 import { CheckCircle2, Circle, ChevronLeft } from 'lucide-react'
 
+interface SidebarCourse {
+  slug: string
+  title: string
+  emoji: string
+  lessons: { id: string; title: string }[]
+}
+
 interface Props {
-  course: StaticCourse
+  course: SidebarCourse
   currentLessonId: string
   completedIds: Set<string>
 }

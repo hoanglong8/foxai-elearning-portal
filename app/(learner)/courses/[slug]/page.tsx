@@ -165,7 +165,7 @@ function CourseDetail({
               <Badge className={CATEGORY_COLORS[cat] ?? 'bg-gray-100 text-gray-600'} variant="secondary">
                 {CATEGORY_LABELS[cat] ?? course.category}
               </Badge>
-              <Badge variant="outline">{LEVEL_LABELS[course.level] ?? course.level}</Badge>
+              <Badge variant="outline">{LEVEL_LABELS[course.level as keyof typeof LEVEL_LABELS] ?? course.level}</Badge>
             </div>
             <h1 className="text-xl font-bold text-gray-900 mb-2">{course.title}</h1>
             <p className="text-gray-500 text-sm">{course.description}</p>

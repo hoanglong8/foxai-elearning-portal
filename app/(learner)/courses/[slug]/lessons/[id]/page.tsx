@@ -47,6 +47,7 @@ export default async function LessonPage({
       return (
         <LessonView
           courseTitle={staticCourse.title}
+          courseEmoji={staticCourse.emoji}
           slug={slug}
           lesson={{ id: lesson.id, title: lesson.title, duration_minutes: lesson.duration_minutes, content: lesson.content }}
           courseId={staticCourse.id}
@@ -64,7 +65,7 @@ export default async function LessonPage({
     // Try db_courses
     const { data: dbCourse } = await supabase
       .from('db_courses')
-      .select('id, title, slug')
+      .select('id, title, slug, emoji')
       .eq('slug', slug)
       .single()
     if (!dbCourse) notFound()
@@ -102,6 +103,7 @@ export default async function LessonPage({
     return (
       <LessonView
         courseTitle={dbCourse.title}
+        courseEmoji={dbCourse.emoji ?? '📚'}
         slug={slug}
         lesson={{ id: dbLesson.id, title: dbLesson.title, duration_minutes: dbLesson.duration_minutes, content: dbLesson.content }}
         courseId={dbCourse.id}
@@ -127,6 +129,7 @@ export default async function LessonPage({
   return (
     <LessonView
       courseTitle={staticCourse.title}
+      courseEmoji={staticCourse.emoji}
       slug={slug}
       lesson={{ id: lesson.id, title: lesson.title, duration_minutes: lesson.duration_minutes, content: lesson.content }}
       courseId={staticCourse.id}
@@ -143,6 +146,7 @@ export default async function LessonPage({
 
 function LessonView({
   courseTitle,
+  courseEmoji,
   slug,
   lesson,
   courseId,
@@ -155,6 +159,7 @@ function LessonView({
   nextLessonId,
 }: {
   courseTitle: string
+  courseEmoji: string
   slug: string
   lesson: { id: string; title: string; duration_minutes: number; content: string }
   courseId: string
@@ -166,7 +171,7 @@ function LessonView({
   prevLessonId?: string
   nextLessonId?: string
 }) {
-  const sidebarCourse = { title: courseTitle, slug, lessons: allLessons }
+  const sidebarCourse = { title: courseTitle, emoji: courseEmoji, slug, lessons: allLessons }
 
   return (
     <div className="flex h-screen overflow-hidden">

@@ -120,7 +120,7 @@ export default async function CoursesPage({
               <div className="px-5 py-4 border-t border-gray-50 flex items-center justify-between">
                 <div className="flex items-center gap-4 text-xs text-gray-400">
                   <Badge variant="outline" className="text-xs capitalize">
-                    {LEVEL_LABELS[course.level] ?? course.level}
+                    {LEVEL_LABELS[course.level as keyof typeof LEVEL_LABELS] ?? course.level}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-2">
